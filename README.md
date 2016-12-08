@@ -1,3 +1,10 @@
+# Modification(s):
+
+Overall, `prometheus-openstack-exporter` script has been modified to work with Openstack Newton, which includes the following:
+- used `keystoneclient v3`
+- used [keystoneauth session](http://docs.openstack.org/developer/keystoneauth/using-sessions.html) for authentication
+- updated [novaclient](http://docs.openstack.org/developer/python-novaclient/api.html) and [neutronclient](http://docs.openstack.org/developer/python-neutronclient/usage/library.html) auth accordingly
+
 # Prometheus OpenStack exporter
 
 Exposes high level [OpenStack](http://www.openstack.org/) metrics to [Prometheus](https://prometheus.io/).
