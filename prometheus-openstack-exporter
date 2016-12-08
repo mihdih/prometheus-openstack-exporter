@@ -31,9 +31,12 @@ from threading import Thread
 import pickle
 import requests
 from time import sleep, time
+from keystoneauth1 import identity
+from keystoneauth1 import loading
+from keystoneauth1 import session
 from neutronclient.v2_0 import client as neutron_client
-from keystoneclient.v2_0 import client as keystone_client
-from novaclient.v1_1 import client as nova_client
+from keystoneclient.v3 import client as keystone_client
+from novaclient import client as nova_client
 from BaseHTTPServer import BaseHTTPRequestHandler
 from BaseHTTPServer import HTTPServer
 from SocketServer import ForkingMixIn
@@ -54,25 +57,31 @@ class DataGatherer(Thread):
         creds = {
             "username": env['OS_USERNAME'],
             "password": env['OS_PASSWORD'],
+	    "user_domain_name": env['OS_USER_DOMAIN_NAME'],
+            "project_name": env['OS_PROJECT_NAME'],
+            "project_domain_name": env['OS_PROJECT_DOMAIN_NAME'],
             "tenant_name": env['OS_TENANT_NAME'],
             "auth_url": env['OS_AUTH_URL'],
             "region_name": env['OS_REGION_NAME']
         }
-        creds_nova = [
-            env['OS_USERNAME'],
-            env['OS_PASSWORD'],
-            env['OS_TENANT_NAME'],
-            env['OS_AUTH_URL']
-        ]
 
         while True:
             start_time = time()
             try:
                 keystone = keystone_client.Client(**creds)
-                nova = nova_client.Client(*creds_nova, region_name=env['OS_REGION_NAME'])
-                neutron = neutron_client.Client(**creds)
 
-                prodstack['tenants'] = [x._info for x in keystone.tenants.list()]
+		loader = loading.get_plugin_loader('password')
+		auth = loader.load_from_options(auth_url=env['OS_AUTH_URL'],
+						username=env['OS_USERNAME'],
+						password=env['OS_PASSWORD'],
+						project_name=env['OS_PROJECT_NAME'],
+						project_domain_name=env['OS_PROJECT_DOMAIN_NAME'],
+						user_domain_name=env['OS_USER_DOMAIN_NAME'])
+		sess = session.Session(auth=auth)
+		nova = nova_client.Client("2.9", session=sess)
+		neutron = neutron_client.Client(session=sess)		
+
+                prodstack['projects'] = [x._info for x in keystone.projects.list()]
                 prodstack['hypervisors'] = [x._info for x in nova.hypervisors.list()]
                 prodstack['services'] = [x._info for x in nova.services.list()]
                 prodstack['networks'] = neutron.list_networks()['networks']
@@ -129,7 +138,7 @@ class Neutron():
         with open(config['cache_file'], 'rb') as f:
             self.prodstack = pickle.load(f)[0]
 
-        self.tenant_map = {t['id']: t['name'] for t in self.prodstack['tenants']}
+        self.tenant_map = {t['id']: t['name'] for t in self.prodstack['projects']}
         self.network_map = {n['id']: n['name'] for n in self.prodstack['networks']}
         self.subnet_map = {n['id']: {'name': n['name'], 'pool': n['allocation_pools']} for n in self.prodstack['subnets']}
         self.routers = self.prodstack['routers']
@@ -203,7 +212,7 @@ class Nova():
         with open(config['cache_file'], 'rb') as f:
             self.prodstack = pickle.load(f)[0]
         self.hypervisors = self.prodstack['hypervisors']
-        self.tenant_map = {t['id']: t['name'] for t in self.prodstack['tenants']}
+        self.tenant_map = {t['id']: t['name'] for t in self.prodstack['projects']}
         self.flavor_map = {f['id']: {'ram': f['ram'], 'disk': f['disk'], 'vcpus': f['vcpus']}
                            for f in self.prodstack['flavors']}
         self.aggregate_map = {}
@@ -361,9 +370,10 @@ class OpenstackExporterHandler(BaseHTTPRequestHandler):
                 nova = Nova()
                 swift = Swift()
                 output = neutron.get_stats() + \
-                    nova.get_stats() + \
+                     nova.get_stats() + \
                     swift.get_stats() + \
                     data_gatherer.get_stats()
+                
                 self.send_response(200)
                 self.send_header('Content-Type', CONTENT_TYPE_LATEST)
                 self.end_headers()
