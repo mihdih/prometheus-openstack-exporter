@@ -31,9 +31,7 @@ from threading import Thread
 import pickle
 import requests
 from time import sleep, time
-from keystoneauth1 import identity
-from keystoneauth1 import loading
-from keystoneauth1 import session
+from keystoneauth1 import loading, session
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v3 import client as keystone_client
 from novaclient import client as nova_client
@@ -54,36 +52,24 @@ class DataGatherer(Thread):
 
     def run(self):
         prodstack = {}
-        creds = {
-            "username": env['OS_USERNAME'],
-            "password": env['OS_PASSWORD'],
-	    "user_domain_name": env['OS_USER_DOMAIN_NAME'],
-            "project_name": env['OS_PROJECT_NAME'],
+        auth_options = {
+            "auth_url":            env['OS_AUTH_URL'],
+            "username":            env['OS_USERNAME'],
+            "password":            env['OS_PASSWORD'],
+            "project_name":        env['OS_PROJECT_NAME'],
             "project_domain_name": env['OS_PROJECT_DOMAIN_NAME'],
-            "tenant_name": env['OS_TENANT_NAME'],
-            "auth_url": env['OS_AUTH_URL'],
-            "region_name": env['OS_REGION_NAME']
-        }
-        creds_nova = {
-            "username": env['OS_USERNAME'],
-            "api_key": env['OS_PASSWORD'],
-            "auth_url": env['OS_AUTH_URL'],
-            "region_name": env['OS_REGION_NAME']
+            "user_domain_name":    env['OS_USER_DOMAIN_NAME'],
+            "region_name":         env['OS_REGION_NAME']
         }
 
         while True:
             start_time = time()
             try:
-                keystone = keystone_client.Client(**creds)
-
 		loader = loading.get_plugin_loader('password')
-		auth = loader.load_from_options(auth_url=env['OS_AUTH_URL'],
-						username=env['OS_USERNAME'],
-						password=env['OS_PASSWORD'],
-						project_name=env['OS_PROJECT_NAME'],
-						project_domain_name=env['OS_PROJECT_DOMAIN_NAME'],
-						user_domain_name=env['OS_USER_DOMAIN_NAME'])
+		auth = loader.load_from_options(**auth_options)
 		sess = session.Session(auth=auth)
+
+                keystone = keystone_client.Client(session=sess)
 		nova = nova_client.Client("2.9", session=sess)
 		neutron = neutron_client.Client(session=sess)		
 
